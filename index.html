@@ -31,6 +31,14 @@
           <option value="999999999">0 – 999,999,999</option>
         </select>
       </label>
+      <label class="field">
+        <span>Timer</span>
+        <span class="switch">
+          <input id="timer" type="checkbox" role="switch" autocomplete="off">
+          <span class="switch-track"></span>
+          <span id="timer-state">Off</span>
+        </span>
+      </label>
     </section>
 
     <section class="score">
@@ -40,6 +48,11 @@
     </section>
 
     <section class="card">
+      <div id="timer-box" class="timer" hidden>
+        <div class="timer-track"><div id="timer-bar" class="timer-bar"></div></div>
+        <span id="timer-text" class="timer-text">0s</span>
+      </div>
+
       <p id="instruction" class="instruction">Write this number in words:</p>
       <div id="question" class="question">0</div>
 

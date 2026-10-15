@@ -62,6 +62,11 @@ function parseNumber(text) {
 const el = {
   mode: document.getElementById("mode"),
   range: document.getElementById("range"),
+  timer: document.getElementById("timer"),
+  timerState: document.getElementById("timer-state"),
+  timerBox: document.getElementById("timer-box"),
+  timerBar: document.getElementById("timer-bar"),
+  timerText: document.getElementById("timer-text"),
   instruction: document.getElementById("instruction"),
   question: document.getElementById("question"),
   form: document.getElementById("answer-form"),
@@ -81,9 +86,56 @@ const el = {
 const score = { correct: 0, wrong: 0, streak: 0 };
 let current = null; // { number, type: "num2words" | "words2num" }
 let answered = false;
+const timer = { id: null, deadline: 0, limit: 0 };
 
 function randomInt(max) {
   return Math.floor(Math.random() * (max + 1));
+}
+
+// ---------- Timer ----------
+
+// Seconds allowed for a question: longer numbers/words get more time.
+// Writing words takes longer to type than digits, so num2words gets more per word.
+function timeLimitFor(question) {
+  const words = numberToWords(question.number).split(/[\s-]+/).length;
+  const digits = String(question.number).length;
+  const seconds = question.type === "num2words"
+    ? 5 + 2.5 * words
+    : 4 + words + 0.5 * digits;
+  return Math.max(5, Math.ceil(seconds));
+}
+
+function startTimer() {
+  stopTimer();
+  if (!el.timer.checked) {
+    el.timerBox.hidden = true;
+    return;
+  }
+  timer.limit = timeLimitFor(current) * 1000;
+  timer.deadline = performance.now() + timer.limit;
+  el.timerBox.hidden = false;
+  tick();
+}
+
+// Runs once per screen frame so the bar moves smoothly
+function tick() {
+  const left = Math.max(0, timer.deadline - performance.now());
+  const fraction = left / timer.limit;
+  el.timerBar.style.transform = `scaleX(${fraction})`;
+  const text = Math.ceil(left / 1000) + "s";
+  if (el.timerText.textContent !== text) el.timerText.textContent = text;
+  el.timerBox.classList.toggle("low", fraction <= 0.25);
+  if (left <= 0) {
+    stopTimer();
+    checkAnswer(true);
+    return;
+  }
+  timer.id = requestAnimationFrame(tick);
+}
+
+function stopTimer() {
+  cancelAnimationFrame(timer.id);
+  timer.id = null;
 }
 
 function newQuestion() {
@@ -119,13 +171,15 @@ function newQuestion() {
   el.feedback.hidden = true;
   el.feedback.classList.remove("correct", "wrong");
   el.answer.focus();
+  startTimer();
 }
 
-function checkAnswer() {
+// timedOut = true when the timer ran out: whatever was typed is checked as-is
+function checkAnswer(timedOut = false) {
   if (answered) return;
 
   const input = el.answer.value.trim();
-  if (!input) {
+  if (!input && !timedOut) {
     el.answer.classList.remove("shake");
     void el.answer.offsetWidth; // restart the animation
     el.answer.classList.add("shake");
@@ -146,6 +200,7 @@ function checkAnswer() {
   }
 
   answered = true;
+  stopTimer();
   if (isCorrect) {
     score.correct++;
     score.streak++;
@@ -155,9 +210,9 @@ function checkAnswer() {
   }
   updateScore();
 
-  el.result.textContent = isCorrect ? "✓ Correct!" : "✗ Not quite";
+  el.result.textContent = isCorrect ? "✓ Correct!" : timedOut ? "⏱ Time's up!" : "✗ Not quite";
   el.correctAnswer.textContent = correctText;
-  el.yourAnswer.textContent = input;
+  el.yourAnswer.textContent = input || "(no answer)";
   el.feedback.classList.add(isCorrect ? "correct" : "wrong");
   el.feedback.hidden = false;
   el.answer.disabled = true;
@@ -175,7 +230,7 @@ function updateScore() {
 
 el.form.addEventListener("submit", (e) => {
   e.preventDefault();
-  checkAnswer();
+  checkAnswer(false);
 });
 
 el.next.addEventListener("click", newQuestion);
@@ -191,6 +246,16 @@ document.addEventListener("keydown", (e) => {
 el.answer.addEventListener("animationend", () => el.answer.classList.remove("shake"));
 el.mode.addEventListener("change", newQuestion);
 el.range.addEventListener("change", newQuestion);
+// Turning the timer on/off applies to the current question without skipping it
+el.timer.addEventListener("change", () => {
+  el.timerState.textContent = el.timer.checked ? "On" : "Off";
+  if (answered) {
+    if (!el.timer.checked) el.timerBox.hidden = true;
+    return;
+  }
+  startTimer();
+  el.answer.focus();
+});
 
 el.reset.addEventListener("click", () => {
   score.correct = score.wrong = score.streak = 0;
