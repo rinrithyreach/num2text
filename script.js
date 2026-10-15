@@ -138,6 +138,45 @@ function stopTimer() {
   timer.id = null;
 }
 
+function updateTimerLabel() {
+  el.timerState.textContent = el.timer.checked ? "On" : "Off";
+}
+
+// ---------- Saved settings ----------
+
+const SETTINGS_KEY = "num2text-settings";
+
+// Sets a <select> to a saved value, keeping the default if that option no longer exists
+function restoreSelect(select, value) {
+  const fallback = select.value;
+  select.value = value;
+  if (select.selectedIndex === -1) select.value = fallback;
+}
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {};
+    if (saved.mode) restoreSelect(el.mode, saved.mode);
+    if (saved.range) restoreSelect(el.range, saved.range);
+    el.timer.checked = saved.timer === true;
+  } catch {
+    // Storage blocked or corrupted: keep the defaults
+  }
+  updateTimerLabel();
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      mode: el.mode.value,
+      range: el.range.value,
+      timer: el.timer.checked,
+    }));
+  } catch {
+    // Storage blocked: settings just won't be remembered
+  }
+}
+
 function newQuestion() {
   const max = Number(el.range.value);
   let number;
@@ -244,11 +283,18 @@ document.addEventListener("keydown", (e) => {
 });
 
 el.answer.addEventListener("animationend", () => el.answer.classList.remove("shake"));
-el.mode.addEventListener("change", newQuestion);
-el.range.addEventListener("change", newQuestion);
+el.mode.addEventListener("change", () => {
+  saveSettings();
+  newQuestion();
+});
+el.range.addEventListener("change", () => {
+  saveSettings();
+  newQuestion();
+});
 // Turning the timer on/off applies to the current question without skipping it
 el.timer.addEventListener("change", () => {
-  el.timerState.textContent = el.timer.checked ? "On" : "Off";
+  updateTimerLabel();
+  saveSettings();
   if (answered) {
     if (!el.timer.checked) el.timerBox.hidden = true;
     return;
@@ -263,4 +309,5 @@ el.reset.addEventListener("click", () => {
   newQuestion();
 });
 
+loadSettings();
 newQuestion();
