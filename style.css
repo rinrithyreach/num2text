@@ -1,34 +1,47 @@
 :root {
-  --bg: #f4f5f7;
+  color-scheme: light;
+  --bg: #fdf6e3;
+  --dot: #e4d9bd;
   --surface: #ffffff;
-  --text: #1c1e21;
-  --muted: #6b7280;
-  --border: #dfe2e6;
-  --accent: #3b5bdb;
-  --accent-text: #ffffff;
-  --good: #2f9e44;
-  --good-bg: #ebfbee;
-  --bad: #e03131;
-  --bad-bg: #fff5f5;
-  --warn: #e8590c;
-  --radius: 12px;
+  --focus-bg: #fff4c2;
+  --text: #000000;
+  --muted: #4b4b55;
+  --ink: #000000;      /* borders and hard shadows */
+  --on-color: #000000; /* text on the bright fills below */
+  --yellow: #ffdc58;
+  --blue: #69d2e7;
+  --green: #a3e635;
+  --red: #ff6b6b;
+  --purple: #a388ee;
+  --orange: #ff9f1c;
+  --danger: #d62828;
+  --border: 3px solid var(--ink);
+  --radius: 6px;
+  --shadow: 3px 3px 0 var(--ink);
+  --shadow-up: 5px 5px 0 var(--ink);
+  --shadow-lg: 6px 6px 0 var(--ink);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121316;
-    --surface: #1d1f24;
-    --text: #e9ecef;
-    --muted: #9aa0a8;
-    --border: #2e3138;
-    --accent: #748ffc;
-    --accent-text: #0f1220;
-    --good: #69db7c;
-    --good-bg: #16261a;
-    --bad: #ff8787;
-    --bad-bg: #2b1718;
-    --warn: #ffa94d;
-  }
+/* Light is the default; dark is opt-in via the toggle (saved in localStorage) */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1b1c23;
+  --dot: #2d2f3a;
+  --surface: #262833;
+  --focus-bg: #343750;
+  --text: #f4f1ea;
+  --muted: #b8b5c4;
+  --ink: #f4f1ea;
+  --danger: #ff6b6b;
+}
+
+/* Theme switch: the new theme grows out of the toggle button (animated in script.js) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
 }
 
 * {
@@ -38,59 +51,280 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--dot) 1.5px, transparent 1.5px);
+  background-size: 22px 22px;
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-weight: 500;
   line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app {
-  max-width: 640px;
+  max-width: 580px;
   margin: 0 auto;
-  padding: 32px 16px 48px;
+  padding: 28px 16px 40px;
+}
+
+/* Page entrance: sections rise in one after another */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.header,
+.controls,
+.score,
+.card,
+.btn.link {
+  animation: rise-in 0.5s var(--ease-out) backwards;
+}
+
+.controls { animation-delay: 0.06s; }
+.score { animation-delay: 0.12s; }
+.card { animation-delay: 0.18s; }
+.btn.link { animation-delay: 0.24s; }
+
+/* Header */
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .header h1 {
+  display: inline-block;
   margin: 0;
-  font-size: 2rem;
+  padding: 2px 12px;
+  font-size: 1.85rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--on-color);
+  background: var(--yellow);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transform: rotate(-2deg);
+  transition: transform 0.4s var(--ease-spring);
 }
 
 .subtitle {
-  margin: 4px 0 24px;
+  margin: 14px 0 20px;
+  font-size: 0.92rem;
   color: var(--muted);
 }
 
-/* Controls */
+/* Theme toggle: sun and moon swap with a spin */
+.theme-toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+}
+
+.theme-toggle svg {
+  position: absolute;
+  inset: 0;
+  width: 21px;
+  height: 21px;
+  margin: auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.5s var(--ease-spring), opacity 0.25s;
+}
+
+.theme-toggle .sun circle { fill: var(--yellow); }
+.theme-toggle .moon path { fill: var(--purple); }
+
+.theme-toggle .moon,
+:root[data-theme="dark"] .theme-toggle .sun {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.3);
+}
+
+:root[data-theme="dark"] .theme-toggle .moon {
+  opacity: 1;
+  transform: none;
+}
+
+/* Controls: Mode | Range | Timer */
 .controls {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
   gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .field {
-  flex: 1 1 160px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 0.85rem;
-  color: var(--muted);
+  gap: 5px;
+}
+
+.field > span:first-child {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 select,
 input {
   font: inherit;
+  font-size: 0.95rem;
   color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  background-color: var(--surface);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  box-shadow: var(--shadow);
+  transition:
+    box-shadow 0.2s var(--ease-out),
+    background-color 0.2s,
+    transform 0.2s var(--ease-out);
+}
+
+/* Custom chevron drawn with currentColor so it follows the theme */
+select {
+  width: 100%;
+  appearance: none;
+  padding-right: 34px;
+  cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 19px) 50%, calc(100% - 13px) 50%;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
 }
 
 select:focus,
 input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+}
+
+/* A dropdown only lights up while open or keyboard-focused, not after a tap.
+   :is() keeps the rule working in browsers that don't know :open */
+input:focus,
+select:is(:focus-visible, :open) {
+  background-color: var(--focus-bg);
+  box-shadow: var(--shadow-up);
+}
+
+/* Native dropdown lists (browsers without base-select) at least follow the theme colours */
+option {
+  color: var(--text);
+  background-color: var(--surface);
+}
+
+/* Fully styled dropdown list where supported (Chrome/Edge 135+, incl. Android) */
+@supports (appearance: base-select) {
+  select,
+  ::picker(select) {
+    appearance: base-select;
+  }
+
+  select {
+    display: flex;
+    align-items: center;
+    padding-right: 12px;
+    background-image: none; /* replaced by ::picker-icon */
+  }
+
+  select::picker-icon {
+    content: "";
+    flex-shrink: 0;
+    width: 12px;
+    height: 7px;
+    margin-left: auto;
+    background: currentColor;
+    clip-path: polygon(0 0, 100% 0, 50% 100%);
+    transition: rotate 0.25s var(--ease-out);
+  }
+
+  select:open::picker-icon {
+    rotate: 180deg;
+  }
+
+  ::picker(select) {
+    margin-block: 8px; /* clear the select's shadow, whether the list opens below or above */
+    padding: 5px;
+    color: var(--text);
+    background: var(--surface);
+    border: var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-up);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition:
+      opacity 0.2s var(--ease-out),
+      transform 0.2s var(--ease-out),
+      overlay 0.2s allow-discrete,
+      display 0.2s allow-discrete;
+  }
+
+  select:open::picker(select) {
+    opacity: 1;
+    transform: none;
+  }
+
+  @starting-style {
+    select:open::picker(select) {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+
+  option {
+    padding: 8px 10px;
+    border-radius: 4px;
+    background-color: transparent;
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+
+  option::checkmark {
+    display: none;
+  }
+
+  option:hover {
+    background-color: var(--focus-bg);
+  }
+
+  option:checked {
+    font-weight: 700;
+    color: var(--on-color);
+    background-color: var(--yellow);
+  }
+
+  option:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: -2px;
+  }
+}
+
+input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* After answering, the input keeps the typed answer, pressed in and locked */
+input:disabled {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+  opacity: 1;
+  cursor: default;
+  transform: translate(3px, 3px);
+  box-shadow: none;
 }
 
 /* On/off switch */
@@ -98,14 +332,23 @@ input:focus {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   cursor: pointer;
   user-select: none;
+  transition: box-shadow 0.2s var(--ease-out), background-color 0.2s;
+}
+
+.switch:focus-within {
+  background: var(--focus-bg);
+  box-shadow: var(--shadow-up);
 }
 
 .switch input {
@@ -115,40 +358,40 @@ input:focus {
   height: 1px;
 }
 
+.switch-label {
+  min-width: 3ch;
+}
+
 .switch-track {
   position: relative;
   flex-shrink: 0;
   width: 40px;
   height: 22px;
+  border: var(--border);
   border-radius: 999px;
-  background: var(--border);
-  transition: background 0.2s;
+  background: var(--surface);
+  transition: background-color 0.25s;
 }
 
 .switch-track::after {
   content: "";
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s;
+  background: var(--ink);
+  transition: transform 0.35s var(--ease-spring), background-color 0.25s;
 }
 
 .switch input:checked + .switch-track {
-  background: var(--accent);
+  background: var(--green);
 }
 
 .switch input:checked + .switch-track::after {
+  background: var(--on-color);
   transform: translateX(18px);
-}
-
-.switch input:focus-visible + .switch-track {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 /* Score */
@@ -156,51 +399,71 @@ input:focus {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .stat {
-  background: var(--surface);
-  border: 1px solid var(--border);
+  color: var(--on-color);
+  background: var(--yellow);
+  border: var(--border);
   border-radius: var(--radius);
-  padding: 10px 14px;
+  box-shadow: var(--shadow);
+  padding: 7px 12px;
   display: flex;
   flex-direction: column;
 }
 
+.stat.good { background: var(--green); }
+.stat.bad { background: var(--red); }
+.stat.streak { background: var(--purple); }
+
+/* Played on a score tile when its number changes */
+@keyframes bump {
+  40% { transform: scale(1.08) rotate(-2deg); }
+}
+
+.stat.bump {
+  animation: bump 0.4s var(--ease-spring);
+}
+
 .stat-label {
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .stat-value {
-  font-size: 1.4rem;
+  font-size: 1.45rem;
   font-weight: 700;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
-
-.stat-value.good { color: var(--good); }
-.stat-value.bad { color: var(--bad); }
 
 /* Question card */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: var(--border);
   border-radius: var(--radius);
-  padding: 24px;
+  box-shadow: var(--shadow-lg);
+  padding: 20px;
 }
 
 .instruction {
   margin: 0;
-  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 /* Timer */
 .timer {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: 10px;
+  margin-bottom: 14px;
+  animation: rise-in 0.35s var(--ease-out);
 }
 
 .timer[hidden] {
@@ -209,57 +472,86 @@ input:focus {
 
 .timer-track {
   flex: 1;
-  height: 8px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  height: 14px;
+  background: var(--surface);
+  border: var(--border);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 
 .timer-bar {
   height: 100%;
-  background: var(--accent);
+  background: var(--purple);
   transform-origin: left;
   will-change: transform;
+  transition: background-color 0.3s;
 }
 
 .timer-text {
   min-width: 3ch;
   text-align: right;
+  font-size: 0.95rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  transition: color 0.3s;
 }
 
-.timer.low .timer-bar { background: var(--warn); }
-.timer.low .timer-text { color: var(--warn); }
+.timer.low .timer-bar { background: var(--orange); }
+.timer.low .timer-text { color: var(--danger); }
 
 .question {
-  margin: 12px 0 20px;
-  font-size: 2.2rem;
+  margin: 8px 0 16px;
+  padding: 10px 14px;
+  font-size: 1.9rem;
   font-weight: 700;
+  line-height: 1.2;
+  color: var(--on-color);
+  background: var(--blue);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   word-break: break-word;
   font-variant-numeric: tabular-nums;
 }
 
 .question.words {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
+  line-height: 1.35;
 }
 
+/* Played each time a new question appears */
+@keyframes swap-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+}
+
+.question.swap {
+  animation: swap-in 0.4s var(--ease-out);
+}
+
+/* Answer row: Submit and Next share the same slot */
 .answer-form {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .answer-form input {
-  flex: 1 1 240px;
+  flex: 1;
   min-width: 0;
-  font-size: 1.05rem;
+  font-size: 1rem;
+}
+
+.answer-form .btn {
+  flex-shrink: 0;
+  min-width: 108px;
 }
 
 .answer-form input.shake {
   animation: shake 0.3s;
-  border-color: var(--bad);
+  background-color: var(--red);
+  color: var(--on-color);
 }
 
 @keyframes shake {
@@ -268,93 +560,203 @@ input:focus {
   75% { transform: translateX(6px); }
 }
 
-/* Buttons */
-.btn {
-  font: inherit;
-  font-weight: 600;
-  padding: 10px 18px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
+/* Next appears with a little pop where Submit was */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
 }
 
-.btn:hover { filter: brightness(0.96); }
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+#next:not([hidden]) {
+  animation: pop-in 0.3s var(--ease-spring);
+}
+
+/* Buttons: lift on hover, press flat into their shadow on click */
+.btn {
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 8px 16px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition:
+    transform 0.15s var(--ease-out),
+    box-shadow 0.15s var(--ease-out),
+    background-color 0.2s;
+}
+
+/* Only on real pointers, so a tap on a phone doesn't leave the button stuck "lifted" */
+@media (hover: hover) {
+  .btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 4px 4px 0 var(--ink);
+  }
+
+  .header h1:hover {
+    transform: rotate(1deg) scale(1.04);
+  }
+}
+
+.btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--ink);
+  transition-duration: 0.05s;
+}
+
+.btn:focus-visible {
+  outline: 3px dashed var(--ink);
+  outline-offset: 3px;
+}
 
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-text);
+  background: var(--yellow);
+  color: var(--on-color);
 }
 
 .btn.link {
   display: block;
-  margin: 16px auto 0;
+  margin: 18px auto 0;
+  padding: 6px 10px;
+  font-size: 0.9rem;
   border: none;
   background: none;
-  color: var(--muted);
-  font-weight: 400;
+  box-shadow: none;
+  color: var(--text);
   text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 5px;
+  text-decoration-color: var(--red);
+  transition: text-decoration-color 0.2s;
 }
 
-/* Feedback */
+.btn.link:hover,
+.btn.link:active {
+  transform: none;
+  box-shadow: none;
+  text-decoration-color: var(--ink);
+}
+
+/* Feedback: replaces the hint right under the answer row */
 .feedback {
-  margin-top: 20px;
-  padding: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
+  margin-top: 16px;
+  padding: 10px 14px;
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  animation: pop-in 0.35s var(--ease-spring);
 }
 
-.feedback.correct {
-  background: var(--good-bg);
-  border-color: var(--good);
-}
-
+.feedback.correct,
 .feedback.wrong {
-  background: var(--bad-bg);
-  border-color: var(--bad);
+  color: var(--on-color);
 }
+
+.feedback.correct { background: var(--green); }
+.feedback.wrong { background: var(--red); }
 
 .result {
-  margin: 0 0 8px;
-  font-size: 1.2rem;
+  margin: 0;
+  font-size: 1.05rem;
   font-weight: 700;
 }
 
-.feedback.correct .result { color: var(--good); }
-.feedback.wrong .result { color: var(--bad); }
-
 .answer-line {
-  margin: 4px 0;
+  margin: 2px 0 0;
+  font-size: 0.92rem;
   word-break: break-word;
 }
 
-.muted { color: var(--muted); }
-
-.feedback .btn {
-  margin-top: 12px;
+.hint {
+  margin: 16px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
 }
 
-.hint {
-  margin: 20px 0 0;
-  font-size: 0.85rem;
-  color: var(--muted);
+.feedback:not([hidden]) + .hint {
+  display: none;
 }
 
 kbd {
   font-family: inherit;
-  font-size: 0.8rem;
-  padding: 1px 6px;
-  border: 1px solid var(--border);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 5px;
+  color: var(--text);
+  background: var(--surface);
+  border: 2px solid var(--ink);
   border-radius: 4px;
-  background: var(--bg);
+  box-shadow: 2px 2px 0 var(--ink);
 }
 
-@media (max-width: 480px) {
-  .question { font-size: 1.8rem; }
-  .question.words { font-size: 1.2rem; }
-  .card { padding: 18px; }
-  .answer-form .btn { flex: 1 1 100%; }
+/* Phones */
+@media (max-width: 520px) {
+  .app { padding: 20px 14px 32px; }
+
+  .header h1 { font-size: 1.55rem; }
+  .theme-toggle { width: 40px; height: 40px; }
+  .subtitle { margin: 12px 0 16px; font-size: 0.85rem; }
+
+  /* Mode on its own row, then Range | Timer */
+  .controls {
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .field:first-child { grid-column: 1 / -1; }
+
+  /* 16px keeps iOS from zooming in when a field is tapped */
+  select,
+  input,
+  .switch {
+    font-size: 16px;
+  }
+
+  .score {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .stat { padding: 6px 10px; }
+  .stat-label { font-size: 0.62rem; }
+  .stat-value { font-size: 1.25rem; }
+
+  .card {
+    padding: 14px;
+    box-shadow: var(--shadow-up);
+  }
+
+  .question {
+    margin: 6px 0 14px;
+    padding: 8px 12px;
+    font-size: 1.6rem;
+  }
+
+  .question.words { font-size: 1.1rem; }
+
+  /* Input on top, full-width button underneath */
+  .answer-form { flex-wrap: wrap; }
+  .answer-form input { flex: 1 1 100%; font-size: 16px; }
+  .answer-form .btn { flex: 1 1 100%; padding: 10px 16px; }
+
+  .feedback { margin-top: 14px; }
+
+  /* Enter-key tips don't apply to touch keyboards */
+  .hint { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -5,12 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Num2Text Quiz</title>
   <!-- Bump ?v= whenever style.css or script.js change, so browsers don't reuse old cached copies -->
-  <link rel="stylesheet" href="style.css?v=3">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="style.css?v=8">
+  <script>
+    // Apply the saved theme before the first paint, so dark mode doesn't flash light on load
+    try {
+      if ((JSON.parse(localStorage.getItem("num2text-settings")) || {}).theme === "dark") {
+        document.documentElement.dataset.theme = "dark";
+      }
+    } catch {}
+  </script>
 </head>
 <body>
   <main class="app">
     <header class="header">
-      <h1>Num2Text</h1>
+      <div class="header-top">
+        <h1>Num2Text</h1>
+        <button id="theme" type="button" class="btn theme-toggle" aria-label="Dark mode" aria-pressed="false" title="Toggle dark mode">
+          <svg class="sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.5"/>
+            <path d="M12 2v2.5M12 19.5V22M4.93 4.93l1.77 1.77M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07l1.77-1.77M17.3 6.7l1.77-1.77"/>
+          </svg>
+          <svg class="moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
       <p class="subtitle">Practice writing numbers in words, and words as numbers.</p>
     </header>
 
@@ -37,15 +59,15 @@
         <span class="switch">
           <input id="timer" type="checkbox" role="switch" autocomplete="off">
           <span class="switch-track"></span>
-          <span id="timer-state">Off</span>
+          <span id="timer-state" class="switch-label">Off</span>
         </span>
       </label>
     </section>
 
     <section class="score">
-      <div class="stat"><span class="stat-label">Correct</span><span id="correct" class="stat-value good">0</span></div>
-      <div class="stat"><span class="stat-label">Wrong</span><span id="wrong" class="stat-value bad">0</span></div>
-      <div class="stat"><span class="stat-label">Streak</span><span id="streak" class="stat-value">0</span></div>
+      <div class="stat good"><span class="stat-label">Correct</span><span id="correct" class="stat-value">0</span></div>
+      <div class="stat bad"><span class="stat-label">Wrong</span><span id="wrong" class="stat-value">0</span></div>
+      <div class="stat streak"><span class="stat-label">Streak</span><span id="streak" class="stat-value">0</span></div>
     </section>
 
     <section class="card">
@@ -60,13 +82,13 @@
       <form id="answer-form" class="answer-form" autocomplete="off">
         <input id="answer" type="text" placeholder="Type your answer…" aria-label="Your answer">
         <button id="submit" type="submit" class="btn primary">Submit</button>
+        <button id="next" type="button" class="btn primary" hidden>Next →</button>
       </form>
 
+      <!-- Shown in place of the hint once answered; the typed answer stays visible in the input -->
       <div id="feedback" class="feedback" hidden>
         <p id="result" class="result"></p>
         <p class="answer-line">Correct answer: <strong id="correct-answer"></strong></p>
-        <p class="answer-line muted">Your answer: <span id="your-answer"></span></p>
-        <button id="next" type="button" class="btn">Next question →</button>
       </div>
 
       <p class="hint">Press <kbd>Enter</kbd> to submit, then <kbd>Enter</kbd> again for the next question.</p>
@@ -75,6 +97,6 @@
     <button id="reset" type="button" class="btn link">Reset score</button>
   </main>
 
-  <script src="script.js?v=3"></script>
+  <script src="script.js?v=6"></script>
 </body>
 </html>

@@ -75,21 +75,71 @@ const el = {
   feedback: document.getElementById("feedback"),
   result: document.getElementById("result"),
   correctAnswer: document.getElementById("correct-answer"),
-  yourAnswer: document.getElementById("your-answer"),
   next: document.getElementById("next"),
   correct: document.getElementById("correct"),
   wrong: document.getElementById("wrong"),
   streak: document.getElementById("streak"),
   reset: document.getElementById("reset"),
+  theme: document.getElementById("theme"),
 };
 
 const score = { correct: 0, wrong: 0, streak: 0 };
 let current = null; // { number, type: "num2words" | "words2num" }
 let answered = false;
 const timer = { id: null, deadline: 0, limit: 0 };
+let theme = "light"; // "light" | "dark"
 
 function randomInt(max) {
   return Math.floor(Math.random() * (max + 1));
+}
+
+function prefersReducedMotion() {
+  return matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+// Restarts a one-shot CSS animation class (e.g. "shake", "bump") on an element
+function playAnimation(element, className) {
+  element.classList.remove(className);
+  void element.offsetWidth; // restart the animation
+  element.classList.add(className);
+  element.addEventListener("animationend", () => element.classList.remove(className), { once: true });
+}
+
+// ---------- Theme ----------
+
+function applyTheme() {
+  document.documentElement.dataset.theme = theme;
+  el.theme.setAttribute("aria-pressed", String(theme === "dark"));
+}
+
+// The new theme grows as a circle out of the toggle button, where the browser supports it
+function toggleTheme() {
+  theme = theme === "dark" ? "light" : "dark";
+  const swap = () => {
+    applyTheme();
+    saveSettings();
+  };
+
+  if (!document.startViewTransition || prefersReducedMotion()) {
+    swap();
+    return;
+  }
+
+  const box = el.theme.getBoundingClientRect();
+  const x = box.left + box.width / 2;
+  const y = box.top + box.height / 2;
+  const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+
+  document.startViewTransition(swap).ready
+    .then(() => {
+      document.documentElement.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+        { duration: 550, easing: "cubic-bezier(0.22, 1, 0.36, 1)", pseudoElement: "::view-transition-new(root)" },
+      );
+    })
+    .catch(() => {
+      // Transition was skipped (e.g. toggled again mid-animation): the theme still switched
+    });
 }
 
 // ---------- Timer ----------
@@ -159,10 +209,12 @@ function loadSettings() {
     if (saved.mode) restoreSelect(el.mode, saved.mode);
     if (saved.range) restoreSelect(el.range, saved.range);
     el.timer.checked = saved.timer === true;
+    theme = saved.theme === "dark" ? "dark" : "light";
   } catch {
     // Storage blocked or corrupted: keep the defaults
   }
   updateTimerLabel();
+  applyTheme();
 }
 
 function saveSettings() {
@@ -171,6 +223,7 @@ function saveSettings() {
       mode: el.mode.value,
       range: el.range.value,
       timer: el.timer.checked,
+      theme,
     }));
   } catch {
     // Storage blocked: settings just won't be remembered
@@ -203,10 +256,12 @@ function newQuestion() {
     el.answer.placeholder = "e.g. 123";
     el.answer.inputMode = "numeric";
   }
+  playAnimation(el.question, "swap");
 
   el.answer.value = "";
   el.answer.disabled = false;
-  el.submit.disabled = false;
+  el.submit.hidden = false;
+  el.next.hidden = true;
   el.feedback.hidden = true;
   el.feedback.classList.remove("correct", "wrong");
   el.answer.focus();
@@ -219,9 +274,7 @@ function checkAnswer(timedOut = false) {
 
   const input = el.answer.value.trim();
   if (!input && !timedOut) {
-    el.answer.classList.remove("shake");
-    void el.answer.offsetWidth; // restart the animation
-    el.answer.classList.add("shake");
+    playAnimation(el.answer, "shake");
     el.answer.focus();
     return;
   }
@@ -243,20 +296,28 @@ function checkAnswer(timedOut = false) {
   if (isCorrect) {
     score.correct++;
     score.streak++;
+    playAnimation(el.correct.parentElement, "bump");
+    playAnimation(el.streak.parentElement, "bump");
   } else {
     score.wrong++;
     score.streak = 0;
+    playAnimation(el.wrong.parentElement, "bump");
   }
   updateScore();
 
   el.result.textContent = isCorrect ? "✓ Correct!" : timedOut ? "⏱ Time's up!" : "✗ Not quite";
   el.correctAnswer.textContent = correctText;
-  el.yourAnswer.textContent = input || "(no answer)";
   el.feedback.classList.add(isCorrect ? "correct" : "wrong");
   el.feedback.hidden = false;
+
+  // The typed answer stays in the (now locked) input; Next takes Submit's place
+  if (!input) el.answer.placeholder = "(no answer)";
   el.answer.disabled = true;
-  el.submit.disabled = true;
-  el.next.focus();
+  el.submit.hidden = true;
+  el.next.hidden = false;
+  el.next.focus({ preventScroll: true });
+  // Bring the result into view if it landed below the fold (short screens, open keyboard)
+  el.feedback.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
 }
 
 function updateScore() {
@@ -267,6 +328,12 @@ function updateScore() {
 
 // ---------- Events ----------
 
+// After a setting changes, put the cursor back in the answer box. Desktop only: on a phone
+// it would pop the keyboard up. Deferred so it runs after the dropdown hands focus back to itself.
+function refocusAnswer() {
+  if (matchMedia("(pointer: fine)").matches) setTimeout(() => el.answer.focus());
+}
+
 el.form.addEventListener("submit", (e) => {
   e.preventDefault();
   checkAnswer(false);
@@ -274,22 +341,24 @@ el.form.addEventListener("submit", (e) => {
 
 el.next.addEventListener("click", newQuestion);
 
-// Enter after answering moves to the next question
+// Enter after answering moves to the next question (a focused button handles Enter itself)
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && answered && document.activeElement !== el.next) {
+  if (e.key === "Enter" && answered && !(document.activeElement instanceof HTMLButtonElement)) {
     e.preventDefault();
     newQuestion();
   }
 });
 
-el.answer.addEventListener("animationend", () => el.answer.classList.remove("shake"));
+el.theme.addEventListener("click", toggleTheme);
 el.mode.addEventListener("change", () => {
   saveSettings();
   newQuestion();
+  refocusAnswer();
 });
 el.range.addEventListener("change", () => {
   saveSettings();
   newQuestion();
+  refocusAnswer();
 });
 // Turning the timer on/off applies to the current question without skipping it
 el.timer.addEventListener("change", () => {
@@ -300,7 +369,7 @@ el.timer.addEventListener("change", () => {
     return;
   }
   startTimer();
-  el.answer.focus();
+  refocusAnswer();
 });
 
 el.reset.addEventListener("click", () => {
