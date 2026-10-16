@@ -79,11 +79,13 @@ const el = {
   correct: document.getElementById("correct"),
   wrong: document.getElementById("wrong"),
   streak: document.getElementById("streak"),
+  best: document.getElementById("best"),
   reset: document.getElementById("reset"),
   theme: document.getElementById("theme"),
 };
 
-const score = { correct: 0, wrong: 0, streak: 0 };
+// streaks: { [range]: { current, best } }, see "Saved score" below
+const score = { correct: 0, wrong: 0, streaks: {} };
 let current = null; // { number, type: "num2words" | "words2num" }
 let answered = false;
 const timer = { id: null, deadline: 0, limit: 0 };
@@ -102,7 +104,12 @@ function playAnimation(element, className) {
   element.classList.remove(className);
   void element.offsetWidth; // restart the animation
   element.classList.add(className);
-  element.addEventListener("animationend", () => element.classList.remove(className), { once: true });
+  const done = (e) => {
+    if (e.target !== element) return; // ignore animations bubbling up from children
+    element.classList.remove(className);
+    element.removeEventListener("animationend", done);
+  };
+  element.addEventListener("animationend", done);
 }
 
 // ---------- Theme ----------
@@ -230,6 +237,43 @@ function saveSettings() {
   }
 }
 
+// ---------- Saved score ----------
+
+// Correct/wrong are overall totals. Streaks are kept per range, since 10 in a row on
+// 0–100 isn't comparable with 10 on 0–999,999,999. "Reset score" keeps each range's best.
+const STATS_KEY = "num2text-stats";
+
+function rangeStreak() {
+  return (score.streaks[el.range.value] ??= { current: 0, best: 0 });
+}
+
+// Saved values are only trusted if they're whole, non-negative numbers
+function toCount(value) {
+  return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+function loadStats() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STATS_KEY)) || {};
+    score.correct = toCount(saved.correct);
+    score.wrong = toCount(saved.wrong);
+    for (const [range, streak] of Object.entries(saved.streaks || {})) {
+      const current = toCount(streak?.current);
+      score.streaks[range] = { current, best: Math.max(current, toCount(streak?.best)) };
+    }
+  } catch {
+    // Storage blocked or corrupted: start from zero
+  }
+}
+
+function saveStats() {
+  try {
+    localStorage.setItem(STATS_KEY, JSON.stringify(score));
+  } catch {
+    // Storage blocked: the score just won't survive a reload
+  }
+}
+
 function newQuestion() {
   const max = Number(el.range.value);
   let number;
@@ -293,17 +337,23 @@ function checkAnswer(timedOut = false) {
 
   answered = true;
   stopTimer();
+  const streak = rangeStreak();
   if (isCorrect) {
     score.correct++;
-    score.streak++;
+    streak.current++;
     playAnimation(el.correct.parentElement, "bump");
-    playAnimation(el.streak.parentElement, "bump");
+    playAnimation(el.streak.closest(".stat"), "bump");
+    if (streak.current > streak.best) {
+      streak.best = streak.current;
+      playAnimation(el.best, "bump");
+    }
   } else {
     score.wrong++;
-    score.streak = 0;
+    streak.current = 0;
     playAnimation(el.wrong.parentElement, "bump");
   }
   updateScore();
+  saveStats();
 
   el.result.textContent = isCorrect ? "✓ Correct!" : timedOut ? "⏱ Time's up!" : "✗ Not quite";
   el.correctAnswer.textContent = correctText;
@@ -320,10 +370,15 @@ function checkAnswer(timedOut = false) {
   el.feedback.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" });
 }
 
+// Shows the totals and the streak for the selected range
 function updateScore() {
+  const streak = rangeStreak();
   el.correct.textContent = score.correct;
   el.wrong.textContent = score.wrong;
-  el.streak.textContent = score.streak;
+  el.streak.textContent = streak.current;
+  el.best.textContent = "Best " + streak.best;
+  // Highlighted while the current run is the record
+  el.best.classList.toggle("record", streak.current > 0 && streak.current === streak.best);
 }
 
 // ---------- Events ----------
@@ -357,6 +412,7 @@ el.mode.addEventListener("change", () => {
 });
 el.range.addEventListener("change", () => {
   saveSettings();
+  updateScore(); // show this range's streak
   newQuestion();
   refocusAnswer();
 });
@@ -372,11 +428,16 @@ el.timer.addEventListener("change", () => {
   refocusAnswer();
 });
 
+// Clears the totals and current streaks; each range's best streak is kept
 el.reset.addEventListener("click", () => {
-  score.correct = score.wrong = score.streak = 0;
+  score.correct = score.wrong = 0;
+  for (const streak of Object.values(score.streaks)) streak.current = 0;
   updateScore();
+  saveStats();
   newQuestion();
 });
 
 loadSettings();
+loadStats();
+updateScore();
 newQuestion();

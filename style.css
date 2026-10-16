@@ -417,13 +417,38 @@ input:disabled {
 .stat.bad { background: var(--red); }
 .stat.streak { background: var(--purple); }
 
-/* Played on a score tile when its number changes */
+/* Played on a score tile (or the Best badge) when its number changes */
 @keyframes bump {
   40% { transform: scale(1.08) rotate(-2deg); }
 }
 
-.stat.bump {
+.bump {
   animation: bump 0.4s var(--ease-spring);
+}
+
+.stat-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+/* Best streak for the selected range; inverted into a badge while the current run is the record */
+.stat-best {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition: background-color 0.25s, color 0.25s;
+}
+
+.stat-best.record {
+  color: var(--purple);
+  background: var(--on-color);
 }
 
 .stat-label {
