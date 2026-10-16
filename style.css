@@ -343,12 +343,24 @@ input:disabled {
   box-shadow: var(--shadow);
   cursor: pointer;
   user-select: none;
-  transition: box-shadow 0.2s var(--ease-out), background-color 0.2s;
+  transition:
+    box-shadow 0.15s var(--ease-out),
+    background-color 0.2s,
+    transform 0.15s var(--ease-out);
 }
 
-.switch:focus-within {
+/* Highlight only for keyboard focus: after a tap the switch keeps focus,
+   and :focus-within left it stuck looking selected */
+.switch:has(input:focus-visible) {
   background: var(--focus-bg);
   box-shadow: var(--shadow-up);
+}
+
+/* Presses into its shadow while tapped/clicked, like the buttons */
+.switch:active {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 var(--ink);
+  transition-duration: 0.05s;
 }
 
 .switch input {
