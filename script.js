@@ -72,6 +72,8 @@ const el = {
   form: document.getElementById("answer-form"),
   answer: document.getElementById("answer"),
   submit: document.getElementById("submit"),
+  skip: document.getElementById("skip"),
+  announce: document.getElementById("announce"),
   feedback: document.getElementById("feedback"),
   result: document.getElementById("result"),
   correctAnswer: document.getElementById("correct-answer"),
@@ -88,11 +90,53 @@ const el = {
 const score = { correct: 0, wrong: 0, streaks: {} };
 let current = null; // { number, type: "num2words" | "words2num" }
 let answered = false;
-const timer = { id: null, deadline: 0, limit: 0 };
+// Unanswered question per "range|mode", so reloading or flipping settings can't skip it
+let pending = {};
+// pausedLeft: ms remaining while the tab is hidden, null otherwise
+const timer = { id: null, deadline: 0, limit: 0, pausedLeft: null };
 let theme = "light"; // "light" | "dark"
 
 function randomInt(max) {
   return Math.floor(Math.random() * (max + 1));
+}
+
+// ---------- Picking numbers ----------
+
+// Chance that a question gets "traps" added (see addTraps)
+const TRAP_CHANCE = 0.35;
+
+// Picks how many digits first, then a number of that length. Picking 0..max uniformly would
+// make ~90% of 0–999,999,999 questions 9 digits long; this way every length shows up, with
+// longer numbers still more common. A length only partly inside the range (e.g. just "100"
+// in 0–100) gets a proportionally tiny weight.
+function randomNumber(max) {
+  const buckets = [];
+  for (let len = 1, lo = 0; lo <= max; len++, lo = 10 ** (len - 1)) {
+    const hi = Math.min(10 ** len - 1, max);
+    const fullSize = len === 1 ? 10 : 9 * 10 ** (len - 1);
+    buckets.push({ lo, hi, weight: (len * (hi - lo + 1)) / fullSize });
+  }
+  let pick = Math.random() * buckets.reduce((sum, b) => sum + b.weight, 0);
+  const bucket = buckets.find((b) => (pick -= b.weight) < 0) ?? buckets.at(-1);
+  return bucket.lo + randomInt(bucket.hi - bucket.lo);
+}
+
+// Rewrites some digits into the classic traps: zeros in the middle (1,005 / 20,040)
+// and teens inside bigger numbers (112,017)
+function addTraps(n, max) {
+  const digits = [...String(n)];
+  for (let i = 1; i < digits.length; i++) {
+    const isTens = (digits.length - 1 - i) % 3 === 1; // tens digit within its group of three
+    const r = Math.random();
+    if (r < 0.35) digits[i] = "0";
+    else if (isTens && r < 0.6) digits[i] = "1";
+  }
+  return Math.min(Number(digits.join("")), max);
+}
+
+function pickNumber(max) {
+  const n = randomNumber(max);
+  return Math.random() < TRAP_CHANCE ? addTraps(n, max) : n;
 }
 
 function prefersReducedMotion() {
@@ -164,6 +208,7 @@ function timeLimitFor(question) {
 
 function startTimer() {
   stopTimer();
+  timer.pausedLeft = null;
   if (!el.timer.checked) {
     el.timerBox.hidden = true;
     return;
@@ -184,7 +229,7 @@ function tick() {
   el.timerBox.classList.toggle("low", fraction <= 0.25);
   if (left <= 0) {
     stopTimer();
-    checkAnswer(true);
+    checkAnswer("timeout");
     return;
   }
   timer.id = requestAnimationFrame(tick);
@@ -193,6 +238,21 @@ function tick() {
 function stopTimer() {
   cancelAnimationFrame(timer.id);
   timer.id = null;
+}
+
+// Hidden tabs (or a phone switching apps) stop drawing frames but the clock keeps going,
+// so without this you'd come back to an instant "Time's up". Freeze the time left instead.
+function pauseTimer() {
+  if (timer.id === null) return;
+  timer.pausedLeft = Math.max(0, timer.deadline - performance.now());
+  stopTimer();
+}
+
+function resumeTimer() {
+  if (timer.pausedLeft === null) return;
+  timer.deadline = performance.now() + timer.pausedLeft;
+  timer.pausedLeft = null;
+  tick();
 }
 
 function updateTimerLabel() {
@@ -241,6 +301,7 @@ function saveSettings() {
 
 // Correct/wrong are overall totals. Streaks are kept per range, since 10 in a row on
 // 0–100 isn't comparable with 10 on 0–999,999,999. "Reset score" keeps each range's best.
+// The unanswered questions (`pending`) are saved alongside.
 const STATS_KEY = "num2text-stats";
 
 function rangeStreak() {
@@ -261,6 +322,7 @@ function loadStats() {
       const current = toCount(streak?.current);
       score.streaks[range] = { current, best: Math.max(current, toCount(streak?.best)) };
     }
+    if (saved.pending && typeof saved.pending === "object") pending = saved.pending;
   } catch {
     // Storage blocked or corrupted: start from zero
   }
@@ -268,24 +330,44 @@ function loadStats() {
 
 function saveStats() {
   try {
-    localStorage.setItem(STATS_KEY, JSON.stringify(score));
+    localStorage.setItem(STATS_KEY, JSON.stringify({ ...score, pending }));
   } catch {
     // Storage blocked: the score just won't survive a reload
   }
 }
 
-function newQuestion() {
+function pendingKey() {
+  return el.range.value + "|" + el.mode.value;
+}
+
+// The saved unanswered question for the current range and mode, if it's still valid
+function restorePending() {
+  const q = pending[pendingKey()];
+  const typeOk = (q?.type === "num2words" || q?.type === "words2num")
+    && (el.mode.value === "random" || q.type === el.mode.value);
+  const numberOk = toCount(q?.number) === q?.number && q.number <= Number(el.range.value);
+  return typeOk && numberOk ? q : null;
+}
+
+function makeQuestion() {
   const max = Number(el.range.value);
   let number;
   do {
-    number = randomInt(max);
+    number = pickNumber(max);
   } while (current && number === current.number && max > 0);
 
   let type = el.mode.value;
   if (type === "random") type = Math.random() < 0.5 ? "num2words" : "words2num";
+  return { number, type };
+}
 
-  current = { number, type };
+// Shows the unanswered question for this range/mode if there is one, otherwise a new one
+function newQuestion() {
+  current = restorePending() ?? makeQuestion();
+  pending[pendingKey()] = current;
+  saveStats();
   answered = false;
+  const { number, type } = current;
 
   if (type === "num2words") {
     el.instruction.textContent = "Write this number in words:";
@@ -304,20 +386,30 @@ function newQuestion() {
 
   el.answer.value = "";
   el.answer.disabled = false;
+  el.skip.hidden = false;
   el.submit.hidden = false;
   el.next.hidden = true;
   el.feedback.hidden = true;
   el.feedback.classList.remove("correct", "wrong");
+  el.announce.textContent = ""; // so the next result is a change and gets read out
   el.answer.focus();
   startTimer();
 }
 
-// timedOut = true when the timer ran out: whatever was typed is checked as-is
-function checkAnswer(timedOut = false) {
+const OUTCOMES = {
+  correct: { icon: "✓", text: "Correct!" },
+  wrong: { icon: "✗", text: "Not quite" },
+  timeout: { icon: "⏱", text: "Time's up!" },
+  skip: { icon: "↷", text: "Skipped" },
+};
+
+// reason: "submit" (Submit/Enter), "timeout" (timer ran out: whatever was typed is checked
+// as-is) or "skip" (Skip button: counts as wrong and resets the streak)
+function checkAnswer(reason = "submit") {
   if (answered) return;
 
   const input = el.answer.value.trim();
-  if (!input && !timedOut) {
+  if (!input && reason === "submit") {
     playAnimation(el.answer, "shake");
     el.answer.focus();
     return;
@@ -334,9 +426,11 @@ function checkAnswer(timedOut = false) {
     isCorrect = parseNumber(input) === current.number;
     correctText = current.number.toLocaleString("en-US");
   }
+  if (reason === "skip") isCorrect = false;
 
   answered = true;
   stopTimer();
+  delete pending[pendingKey()];
   const streak = rangeStreak();
   if (isCorrect) {
     score.correct++;
@@ -355,14 +449,17 @@ function checkAnswer(timedOut = false) {
   updateScore();
   saveStats();
 
-  el.result.textContent = isCorrect ? "✓ Correct!" : timedOut ? "⏱ Time's up!" : "✗ Not quite";
+  const outcome = OUTCOMES[isCorrect ? "correct" : reason === "submit" ? "wrong" : reason];
+  el.result.textContent = `${outcome.icon} ${outcome.text}`;
   el.correctAnswer.textContent = correctText;
   el.feedback.classList.add(isCorrect ? "correct" : "wrong");
   el.feedback.hidden = false;
+  el.announce.textContent = isCorrect ? outcome.text : `${outcome.text}. The answer is ${correctText}.`;
 
   // The typed answer stays in the (now locked) input; Next takes Submit's place
   if (!input) el.answer.placeholder = "(no answer)";
   el.answer.disabled = true;
+  el.skip.hidden = true;
   el.submit.hidden = true;
   el.next.hidden = false;
   el.next.focus({ preventScroll: true });
@@ -391,10 +488,16 @@ function refocusAnswer() {
 
 el.form.addEventListener("submit", (e) => {
   e.preventDefault();
-  checkAnswer(false);
+  checkAnswer("submit");
 });
 
+el.skip.addEventListener("click", () => checkAnswer("skip"));
 el.next.addEventListener("click", newQuestion);
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) pauseTimer();
+  else resumeTimer();
+});
 
 // Enter after answering moves to the next question (a focused button handles Enter itself)
 document.addEventListener("keydown", (e) => {
@@ -428,13 +531,13 @@ el.timer.addEventListener("change", () => {
   refocusAnswer();
 });
 
-// Clears the totals and current streaks; each range's best streak is kept
+// Clears the totals, current streaks and waiting questions; each range's best streak is kept
 el.reset.addEventListener("click", () => {
   score.correct = score.wrong = 0;
   for (const streak of Object.values(score.streaks)) streak.current = 0;
+  pending = {};
   updateScore();
-  saveStats();
-  newQuestion();
+  newQuestion(); // also saves
 });
 
 loadSettings();

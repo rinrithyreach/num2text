@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap">
-  <link rel="stylesheet" href="style.css?v=9">
+  <link rel="stylesheet" href="style.css?v=10">
   <script>
     // Apply the saved theme before the first paint, so dark mode doesn't flash light on load
     try {
@@ -87,7 +87,8 @@
       <div id="question" class="question">0</div>
 
       <form id="answer-form" class="answer-form" autocomplete="off">
-        <input id="answer" type="text" placeholder="Type your answer…" aria-label="Your answer">
+        <input id="answer" type="text" placeholder="Type your answer…" aria-label="Your answer" aria-describedby="instruction question">
+        <button id="skip" type="button" class="btn skip">Skip</button>
         <button id="submit" type="submit" class="btn primary">Submit</button>
         <button id="next" type="button" class="btn primary" hidden>Next →</button>
       </form>
@@ -99,11 +100,14 @@
       </div>
 
       <p class="hint">Press <kbd>Enter</kbd> to submit, then <kbd>Enter</kbd> again for the next question.</p>
+
+      <!-- Screen readers hear the result here (the visible panel above has emoji and is shown/hidden) -->
+      <p id="announce" class="sr-only" aria-live="polite"></p>
     </section>
 
     <button id="reset" type="button" class="btn link">Reset score</button>
   </main>
 
-  <script src="script.js?v=7"></script>
+  <script src="script.js?v=8"></script>
 </body>
 </html>
