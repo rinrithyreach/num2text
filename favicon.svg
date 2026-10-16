@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .ink { fill: #000; }
+    .outline { stroke: #000; }
+    /* Light outline on dark browser tabs, like the app's dark theme */
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #f4f1ea; }
+      .outline { stroke: #f4f1ea; }
+    }
+  </style>
+  <rect class="ink" x="7" y="7" width="56" height="56" rx="10"/>
+  <rect class="outline" x="2.5" y="2.5" width="56" height="56" rx="10" fill="#ffdc58" stroke-width="5"/>
+  <path d="M18 23.5C18 17 23.5 13 30.5 13S43 17 43 23.5C43 31 35 35.5 18 47.5H43.5" fill="none" stroke="#000" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
