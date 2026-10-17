@@ -51,10 +51,151 @@ function normalizeWords(text) {
     .join(" ");
 }
 
-// Reads a typed number, allowing separators like "1,234" or "1 234"
+// Reads a typed number in English or Khmer digits (០–៩), allowing separators like
+// "1,234", "1 234" or "1.234" (dots only when grouped in threes, as often written in Khmer)
 function parseNumber(text) {
-  const cleaned = text.replace(/[,\s_]/g, "");
-  return /^\d+$/.test(cleaned) ? Number(cleaned) : null;
+  const cleaned = text
+    .replace(/[០-៩]/g, (d) => d.charCodeAt(0) - 0x17e0)
+    .replace(/[,\s_]/g, "");
+  if (/^\d+$/.test(cleaned)) return Number(cleaned);
+  if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) return Number(cleaned.replace(/\./g, ""));
+  return null;
+}
+
+// ---------- Khmer number words ----------
+
+// Khmer builds 6–9 as 5+n (ប្រាំមួយ = "five-one" = 6) and counts below a million with
+// ពាន់ (1,000), ម៉ឺន (10,000) and សែន (100,000), then លាន (1,000,000).
+const KHMER_DIGIT_WORDS = ["សូន្យ", "មួយ", "ពីរ", "បី", "បួន", "ប្រាំ", "ប្រាំមួយ", "ប្រាំពីរ", "ប្រាំបី", "ប្រាំបួន"];
+const KHMER_TENS = ["", "ដប់", "ម្ភៃ", "សាមសិប", "សែសិប", "ហាសិប", "ហុកសិប", "ចិតសិប", "ប៉ែតសិប", "កៅសិប"];
+const KHMER_UNITS = [[100000, "សែន"], [10000, "ម៉ឺន"], [1000, "ពាន់"]];
+
+// 1..999 as a list of words, e.g. 125 -> ["មួយ", "រយ", "ម្ភៃ", "ប្រាំ"]
+function khmerBelowThousand(n) {
+  const parts = [];
+  if (n >= 100) {
+    parts.push(KHMER_DIGIT_WORDS[Math.floor(n / 100)], "រយ");
+    n %= 100;
+  }
+  if (n >= 10) {
+    parts.push(KHMER_TENS[Math.floor(n / 10)]);
+    n %= 10;
+  }
+  if (n > 0) parts.push(KHMER_DIGIT_WORDS[n]);
+  return parts;
+}
+
+// Whole number (0..999,999,999) in Khmer words, traditional style:
+// 15,000 -> មួយម៉ឺនប្រាំពាន់. Words are joined with zero-width spaces, the usual
+// invisible line-break points in Khmer text, so long numbers can wrap.
+function numberToKhmer(n) {
+  if (n === 0) return KHMER_DIGIT_WORDS[0];
+  const parts = [];
+  const millions = Math.floor(n / 1e6);
+  if (millions) parts.push(...khmerBelowThousand(millions), "លាន");
+  let rest = n % 1e6;
+  for (const [value, word] of KHMER_UNITS) {
+    const count = Math.floor(rest / value);
+    if (count) parts.push(KHMER_DIGIT_WORDS[count], word);
+    rest %= value;
+  }
+  if (rest) parts.push(...khmerBelowThousand(rest));
+  return parts.join("​");
+}
+
+// [spelling, value, kind]; longest spellings first so e.g. សែសិប (40) wins over សែន
+const KHMER_TOKENS = [
+  ["សូន្យ", 0, "digit"], ["មួយ", 1, "digit"], ["ពីរ", 2, "digit"], ["បី", 3, "digit"],
+  ["បួន", 4, "digit"], ["ប្រាំ", 5, "digit"],
+  ["ដប់", 10, "ten"], ["ម្ភៃ", 20, "ten"], ["សាមសិប", 30, "ten"], ["សែសិប", 40, "ten"],
+  ["ហាសិប", 50, "ten"], ["ហុកសិប", 60, "ten"], ["ចិតសិប", 70, "ten"], ["ប៉ែតសិប", 80, "ten"],
+  ["បែ៉តសិប", 80, "ten"], ["កៅសិប", 90, "ten"],
+  ["រយ", 100, "hundred"],
+  ["ពាន់", 1000, "unit"], ["ម៉ឺន", 10000, "unit"], ["មឺ៉ន", 10000, "unit"],
+  ["សែន", 100000, "unit"], ["លាន", 1000000, "unit"],
+].sort((a, b) => b[0].length - a[0].length);
+
+// Splits typed Khmer into number words; null if anything isn't one.
+// Spaces, zero-width spaces and punctuation between words are ignored.
+function tokenizeKhmer(text) {
+  const s = text.normalize("NFC").replace(/[\s​-‍,.\-។]/g, "");
+  const tokens = [];
+  for (let i = 0; i < s.length; ) {
+    const match = KHMER_TOKENS.find(([word]) => s.startsWith(word, i));
+    if (!match) return null;
+    tokens.push({ value: match[1], kind: match[2] });
+    i += match[0].length;
+  }
+  return tokens;
+}
+
+// 1..999 from words like មួយរយម្ភៃប្រាំ; null if they don't form a proper number
+function khmerSmallValue(tokens) {
+  let i = 0;
+  // 1–9: a digit word, or ប្រាំ + មួយ..បួន for 6–9
+  const readOneToNine = () => {
+    const t = tokens[i];
+    if (t?.kind !== "digit" || t.value === 0) return null;
+    i++;
+    let value = t.value;
+    const next = tokens[i];
+    if (value === 5 && next?.kind === "digit" && next.value >= 1 && next.value <= 4) {
+      value += next.value;
+      i++;
+    }
+    return value;
+  };
+  let value = 0;
+  const start = i;
+  const hundreds = readOneToNine();
+  if (hundreds && tokens[i]?.kind === "hundred") {
+    value += hundreds * 100;
+    i++;
+  } else {
+    i = start;
+  }
+  if (tokens[i]?.kind === "ten") value += tokens[i++].value;
+  if (i < tokens.length) {
+    const ones = readOneToNine();
+    if (!ones) return null;
+    value += ones;
+  }
+  return i === tokens.length && value > 0 ? value : null;
+}
+
+// Reads Khmer number words back into a number, or null if they aren't valid. Accepts the
+// traditional ម៉ឺន/សែន style and the common ពាន់-only style (ដប់ប្រាំពាន់ = 15,000, also
+// ម្ភៃម៉ឺន = 200,000), as long as the units go from big to small.
+function parseKhmerWords(text) {
+  const tokens = tokenizeKhmer(text);
+  if (!tokens?.length) return null;
+  if (tokens.length === 1 && tokens[0].value === 0) return 0;
+
+  let millions = 0;
+  let below = 0; // part under a million, built from សែន/ម៉ឺន/ពាន់ amounts
+  let cap = 1e6; // each unit and its amount must stay under the previous unit
+  let buffer = [];
+  for (const token of tokens) {
+    if (token.kind !== "unit") {
+      buffer.push(token);
+      continue;
+    }
+    const count = khmerSmallValue(buffer);
+    buffer = [];
+    if (!count) return null;
+    if (token.value === 1e6) {
+      if (millions || below) return null;
+      millions = count;
+      continue;
+    }
+    const amount = count * token.value;
+    if (token.value >= cap || amount >= cap) return null;
+    below += amount;
+    cap = token.value;
+  }
+  const rest = buffer.length ? khmerSmallValue(buffer) : 0;
+  if (rest === null) return null;
+  return millions * 1e6 + below + rest;
 }
 
 // ---------- Quiz state ----------
@@ -84,6 +225,8 @@ const el = {
   best: document.getElementById("best"),
   reset: document.getElementById("reset"),
   theme: document.getElementById("theme"),
+  digits: document.getElementById("digits"),
+  words: document.getElementById("words"),
 };
 
 // streaks: { [range]: { current, best } }, see "Saved score" below
@@ -95,7 +238,6 @@ let pending = {};
 // pausedLeft: ms remaining while the tab is hidden, null otherwise
 const timer = { id: null, deadline: 0, limit: 0, pausedLeft: null };
 let theme = "light"; // "light" | "dark"
-
 function randomInt(max) {
   return Math.floor(Math.random() * (max + 1));
 }
@@ -193,6 +335,70 @@ function toggleTheme() {
     });
 }
 
+// ---------- Digits and words ----------
+
+// Two display settings, each cycled by a button in the controls:
+// - digits: numbers in English digits, Khmer digits (០–៩), or mixed
+// - words: number words in English, Khmer, or mixed
+// "Mixed" picks per question (its `khmer` / `khmerWords` flags). Typed numbers are accepted
+// in either digit script whatever the setting.
+const DISPLAY_OPTIONS = {
+  digits: {
+    western: { label: "123", name: "English" },
+    khmer: { label: "១២៣", name: "Khmer" },
+    mixed: { label: "1២3", name: "Mixed" },
+  },
+  words: {
+    english: { label: "English", name: "English" },
+    khmer: { label: "ខ្មែរ", name: "Khmer" },
+    mixed: { label: "Mixed", name: "Mixed" },
+  },
+};
+const display = { digits: "western", words: "english" };
+
+function updateDisplayButton(setting) {
+  const { label, name } = DISPLAY_OPTIONS[setting][display[setting]];
+  const title = setting[0].toUpperCase() + setting.slice(1);
+  el[setting].textContent = label;
+  el[setting].setAttribute("aria-label", `${title}: ${name}`);
+  el[setting].title = `${title}: ${name} (click to change)`;
+}
+
+// Next option; the current question (and its answer, if shown) switch in place
+function cycleDisplay(setting) {
+  const keys = Object.keys(DISPLAY_OPTIONS[setting]);
+  display[setting] = keys[(keys.indexOf(display[setting]) + 1) % keys.length];
+  updateDisplayButton(setting);
+  playAnimation(el[setting], "flip");
+  saveSettings();
+  renderQuestion();
+  if (answered) showCorrectAnswer();
+  else refocusAnswer();
+}
+
+function showsKhmerDigits() {
+  return display.digits === "khmer" || (display.digits === "mixed" && current?.khmer === true);
+}
+
+function showsKhmerWords() {
+  return display.words === "khmer" || (display.words === "mixed" && current?.khmerWords === true);
+}
+
+// 1234 -> "1,234", or "១,២៣៤" when this question uses Khmer digits
+function formatNumber(n) {
+  return n.toLocaleString("en-US", showsKhmerDigits() ? { numberingSystem: "khmr" } : {});
+}
+
+function formatWords(n) {
+  return showsKhmerWords() ? numberToKhmer(n) : numberToWords(n);
+}
+
+// Marks text as Khmer, for screen readers and the Khmer line-height
+function setKhmerLang(element, isKhmer) {
+  if (isKhmer) element.lang = "km";
+  else element.removeAttribute("lang");
+}
+
 // ---------- Timer ----------
 
 // Seconds allowed for a question: longer numbers/words get more time.
@@ -277,11 +483,16 @@ function loadSettings() {
     if (saved.range) restoreSelect(el.range, saved.range);
     el.timer.checked = saved.timer === true;
     theme = saved.theme === "dark" ? "dark" : "light";
+    for (const setting of Object.keys(display)) {
+      if (Object.hasOwn(DISPLAY_OPTIONS[setting], saved[setting])) display[setting] = saved[setting];
+    }
   } catch {
     // Storage blocked or corrupted: keep the defaults
   }
   updateTimerLabel();
   applyTheme();
+  updateDisplayButton("digits");
+  updateDisplayButton("words");
 }
 
 function saveSettings() {
@@ -291,6 +502,7 @@ function saveSettings() {
       range: el.range.value,
       timer: el.timer.checked,
       theme,
+      ...display,
     }));
   } catch {
     // Storage blocked: settings just won't be remembered
@@ -358,7 +570,38 @@ function makeQuestion() {
 
   let type = el.mode.value;
   if (type === "random") type = Math.random() < 0.5 ? "num2words" : "words2num";
-  return { number, type };
+  return { number, type, khmer: Math.random() < 0.5, khmerWords: Math.random() < 0.5 };
+}
+
+// Fills in the question for `current`; re-run when the digits/words settings change
+function renderQuestion() {
+  const { number, type } = current;
+  const khmerWords = showsKhmerWords();
+
+  if (type === "num2words") {
+    el.instruction.textContent = khmerWords ? "Write this number in Khmer words:" : "Write this number in words:";
+    el.question.textContent = formatNumber(number);
+    el.question.classList.remove("words");
+    if (!answered) el.answer.placeholder = khmerWords ? "e.g. មួយរយម្ភៃបី" : "e.g. one hundred twenty-three";
+    el.answer.inputMode = "text";
+    setKhmerLang(el.question, showsKhmerDigits());
+  } else {
+    el.instruction.textContent = "Write these words as a number:";
+    el.question.textContent = formatWords(number);
+    el.question.classList.add("words");
+    if (!answered) el.answer.placeholder = showsKhmerDigits() ? "e.g. ១២៣" : "e.g. 123";
+    el.answer.inputMode = "numeric";
+    setKhmerLang(el.question, khmerWords);
+  }
+}
+
+function correctAnswerText() {
+  return current.type === "num2words" ? formatWords(current.number) : formatNumber(current.number);
+}
+
+function showCorrectAnswer() {
+  el.correctAnswer.textContent = correctAnswerText();
+  setKhmerLang(el.correctAnswer, current.type === "num2words" ? showsKhmerWords() : showsKhmerDigits());
 }
 
 // Shows the unanswered question for this range/mode if there is one, otherwise a new one
@@ -367,21 +610,7 @@ function newQuestion() {
   pending[pendingKey()] = current;
   saveStats();
   answered = false;
-  const { number, type } = current;
-
-  if (type === "num2words") {
-    el.instruction.textContent = "Write this number in words:";
-    el.question.textContent = number.toLocaleString("en-US");
-    el.question.classList.remove("words");
-    el.answer.placeholder = "e.g. one hundred twenty-three";
-    el.answer.inputMode = "text";
-  } else {
-    el.instruction.textContent = "Write these words as a number:";
-    el.question.textContent = numberToWords(number);
-    el.question.classList.add("words");
-    el.answer.placeholder = "e.g. 123";
-    el.answer.inputMode = "numeric";
-  }
+  renderQuestion();
   playAnimation(el.question, "swap");
 
   el.answer.value = "";
@@ -415,18 +644,12 @@ function checkAnswer(reason = "submit") {
     return;
   }
 
-  const expectedWords = numberToWords(current.number);
   let isCorrect;
-  let correctText;
-
-  if (current.type === "num2words") {
-    isCorrect = normalizeWords(input) === normalizeWords(expectedWords);
-    correctText = expectedWords;
-  } else {
-    isCorrect = parseNumber(input) === current.number;
-    correctText = current.number.toLocaleString("en-US");
-  }
+  if (current.type === "words2num") isCorrect = parseNumber(input) === current.number;
+  else if (showsKhmerWords()) isCorrect = parseKhmerWords(input) === current.number;
+  else isCorrect = normalizeWords(input) === normalizeWords(numberToWords(current.number));
   if (reason === "skip") isCorrect = false;
+  const correctText = correctAnswerText();
 
   answered = true;
   stopTimer();
@@ -451,7 +674,7 @@ function checkAnswer(reason = "submit") {
 
   const outcome = OUTCOMES[isCorrect ? "correct" : reason === "submit" ? "wrong" : reason];
   el.result.textContent = `${outcome.icon} ${outcome.text}`;
-  el.correctAnswer.textContent = correctText;
+  showCorrectAnswer();
   el.feedback.classList.add(isCorrect ? "correct" : "wrong");
   el.feedback.hidden = false;
   el.announce.textContent = isCorrect ? outcome.text : `${outcome.text}. The answer is ${correctText}.`;
@@ -508,6 +731,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 el.theme.addEventListener("click", toggleTheme);
+
+el.digits.addEventListener("click", () => cycleDisplay("digits"));
+el.words.addEventListener("click", () => cycleDisplay("words"));
 el.mode.addEventListener("change", () => {
   saveSettings();
   newQuestion();
